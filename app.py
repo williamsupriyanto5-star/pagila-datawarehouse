@@ -25,10 +25,20 @@ st.markdown("""
         color: #6B7280;
         margin-bottom: 25px;
     }
+    .diagram-text {
+        font-family: monospace;
+        background-color: #1E293B;
+        color: #38BDF8;
+        padding: 15px;
+        border-radius: 8px;
+        white-space: pre;
+        overflow-x: auto;
+        line-height: 1.4;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# PENGGANTI POSTGRESQL LOCALHOST: Generate mock data dari Star Schema Pagila
+# Generate mock data
 @st.cache_data
 def generate_mock_dwh_data():
     categories = ['Action', 'Animation', 'Children', 'Classics', 'Comedy', 'Documentary', 'Drama', 'Family', 'Foreign', 'Games', 'Horror', 'Music', 'New', 'Sci-Fi', 'Sports', 'Travel']
@@ -66,55 +76,81 @@ page = st.sidebar.radio("Navigasi Dashboard", [
     "🎯 Ringkasan Eksekutif", 
     "📈 Analisis Penjualan (Fact Sales)", 
     "🎬 Kinerja Rental (Fact Rental)",
-    "💡 Teori: OLTP vs OLAP"
+    "💡 Teori & Diagram OLTP vs OLAP"
 ])
 
 st.sidebar.markdown("---")
 selected_store = st.sidebar.multiselect("Pilih Toko / Cabang", options=fact_sales['store_id'].unique(), default=fact_sales['store_id'].unique())
 filtered_sales = fact_sales[fact_sales['store_id'].isin(selected_store)]
 
-# --- PAGE 1: EXECUTIVE SUMMARY ---
+# --- PAGE 1, 2, 3 ---
 if page == "🎯 Ringkasan Eksekutif":
     st.markdown('<div class="main-title">🎯 Executive BI Dashboard - Pagila Data Warehouse</div>', unsafe_allow_html=True)
     st.markdown('<div class="subtitle">Analisis berbasis data dari Fact Tables hasil transformasi OLTP ke Star Schema</div>', unsafe_allow_html=True)
-    
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric(label="💰 Total Pendapatan", value=f"${filtered_sales['amount'].sum():,.2f}")
-    with col2:
-        st.metric(label="🛒 Total Transaksi", value=f"{len(filtered_sales):,}")
-    with col3:
-        st.metric(label="⏱️ Rata-rata Durasi Sewa", value=f"{fact_rental['rental_duration_days'].mean():.1f} Hari")
-    with col4:
-        st.metric(label="⚠️ Rasio Keterlambatan", value=f"{(fact_rental['is_late'].sum() / len(fact_rental)) * 100:.1f}%")
-        
+    col1.metric("💰 Total Pendapatan", f"${filtered_sales['amount'].sum():,.2f}")
+    col2.metric("🛒 Total Transaksi", f"{len(filtered_sales):,}")
+    col3.metric("⏱️ Rata-rata Durasi Sewa", f"{fact_rental['rental_duration_days'].mean():.1f} Hari")
+    col4.metric("⚠️ Rasio Keterlambatan", f"{(fact_rental['is_late'].sum() / len(fact_rental)) * 100:.1f}%")
+    
     st.markdown("### 📊 Tren Utama Bisnis")
     c1, c2 = st.columns(2)
     with c1:
         filtered_sales['Bulan'] = filtered_sales['date'].dt.to_period('M').astype(str)
         monthly_rev = filtered_sales.groupby('Bulan')['amount'].sum().reset_index()
-        st.plotly_chart(px.line(monthly_rev, x='Bulan', y='amount', labels={'amount': 'Pendapatan ($)'}, template="plotly_white", markers=True), use_container_width=True)
+        st.plotly_chart(px.line(monthly_rev, x='Bulan', y='amount', template="plotly_white", markers=True), use_container_width=True)
     with c2:
         cat_rev = filtered_sales.groupby('category')['amount'].sum().reset_index().sort_values('amount', ascending=False).head(10)
         st.plotly_chart(px.bar(cat_rev, x='amount', y='category', orientation='h', template="plotly_white"), use_container_width=True)
 
-# --- PAGE 2: SALES ANALYSIS ---
 elif page == "📈 Analisis Penjualan (Fact Sales)":
     st.markdown('<div class="main-title">📈 Analisis Penjualan & Pendapatan</div>', unsafe_allow_html=True)
-    st.dataframe(filtered_sales[['sales_key', 'date', 'amount', 'category', 'store_id', 'customer_segment']].head(100), use_container_width=True)
+    st.dataframe(filtered_sales.head(100), use_container_width=True)
 
-# --- PAGE 3: RENTAL PERFORMANCE ---
 elif page == "🎬 Kinerja Rental (Fact Rental)":
     st.markdown('<div class="main-title">🎬 Kinerja Operasional Penyewaan</div>', unsafe_allow_html=True)
     st.plotly_chart(px.histogram(fact_rental, x='rental_duration_days', nbins=7, template="plotly_white"), use_container_width=True)
 
-# --- PAGE 4: THEORETICAL OLTP VS OLAP ---
-elif page == "💡 Teori: OLTP vs OLAP":
-    st.markdown('<div class="main-title">💡 Pembahasan Teori: OLTP vs OLAP</div>', unsafe_allow_html=True)
+# --- PAGE 4: THEORETICAL WITH DIAGRAM ---
+elif page == "💡 Teori & Diagram OLTP vs OLAP":
+    st.markdown('<div class="main-title">💡 Pembahasan Teori & Arsitektur Data</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subtitle">Visualisasi Alur Kerja Sistem Data Warehouse Pagila</div>', unsafe_allow_html=True)
+    
+    # DIAGRAM 1: ARSITEKTUR PIPELINE DATA
+    st.markdown("### 🗺️ 1. Diagram Alur Data (Pipeline ETL)")
+    diagram_etl = """
+[ DATABASE SOURCE: OLTP ] ──► (Proses Sinkronisasi) ──► [ STAGING AREA (SQL) ]
+  - Aplikasi Kasir Toko                                   - tabel: staging_customer
+  - Input Sewa Real-time                                  - tabel: staging_payment
+           │                                                         │
+           ▼                                                         ▼
+[ DATA VISUALISASI / BI ] ◄── (Query Agregat) ◄──── [ DATA WAREHOUSE: OLAP ]
+  - Dashboard Streamlit Ini                               - Star Schema (Tabel Fakta & Dimensi)
+    """
+    st.markdown(f'<div class="diagram-text">{diagram_etl}</div>', unsafe_allow_html=True)
+    
+    # DIAGRAM 2: STAR SCHEMA
+    st.markdown("### 📐 2. Diagram Skema Bintang (Star Schema DWH)")
+    diagram_star = """
+      [ dim_customer ]               [ dim_store ]
+             │                              │
+             ▼                              ▼
+       ┌──────────────────────────────────────────┐
+       │                FACT_SALES                │
+ ─────►│  (Kolom Metrik: amount, sales_key, dll)  │◄───── [ dim_date ]
+       └──────────────────────────────────────────┘
+             ▲                              ▲
+             │                              │
+         [ dim_film ]               [ dim_geography ]
+    """
+    st.markdown(f'<div class="diagram-text">{diagram_star}</div>', unsafe_allow_html=True)
+    
+    # Perbandingan Tabel
+    st.markdown("### 📊 Tabel Perbandingan Karakteristik")
     oltp_vs_olap_data = {
         "Karakteristik": ["Fokus Utama", "Desain Tabel", "Operasi Dominan", "Contoh di File SQL Anda"],
         "OLTP": ["Operasional & Pencatatan Transaksi", "Normalisasi (3NF) - Tanpa Duplikasi", "Insert, Update, Delete", "Tabel mentah awal 'staging_payment'"],
-        "OLAP": ["Analisis & Pelaporan Tren", "Denormalisasi (Star Schema)", "Select / Read-Only", "Tabel DWH akhir 'fact_sales'"]
+        "OLAP": ["Analisis & Pelaporan Tren Bisnis", "Denormalisasi (Star Schema)", "Select / Read-Only", "Tabel DWH akhir 'fact_sales'"]
     }
     st.table(pd.DataFrame(oltp_vs_olap_data))
 
