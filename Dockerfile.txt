@@ -1,0 +1,8 @@
+# Menggunakan image PHP dengan Apache
+FROM php:7.4-apache
+
+# Menyalin file proyek ke dalam container
+COPY . /var/www/html/
+
+# Memberikan izin akses
+RUN chown -R www-data:www-data /var/www/html
